@@ -68,15 +68,41 @@ class TheNewsScraper(BaseNewsScraper):
         article_id = m.group(1)
         lookup = f"https://www.thenews.com.pk/latest/{article_id}"
 
-        direct = f"https://www.thenews.pk/latest/{article_id}"
         async with self._sem:
+            # Step 1: probe .com.pk/latest/{ID} to detect dead articles
+            # (slug URLs with non-ASCII chars get percent-encoded by aiohttp and
+            #  return 2-byte JS SPA, so we never fetch the slug directly)
             try:
-                async with self._session.get(direct, allow_redirects=True) as resp:
-                    if resp.status != 200:
-                        log.debug("thenews HTTP %d %s", resp.status, direct)
+                async with self._session.get(lookup, allow_redirects=False) as resp:
+                    refresh_hdr = resp.headers.get("Refresh", "")
+                    rm = self._REFRESH_RE.search(refresh_hdr)
+                    if not rm:
+                        return None  # no redirect at all — truly dead
+                    slug_url = rm.group(1).strip()
+            except Exception as exc:
+                log.warning("thenews lookup failed %s: %s", lookup, exc)
+                return None
+
+            # /print/ paths are Cloudflare-blocked
+            if "/print/" in slug_url:
+                return None
+
+            # Homepage redirect means article was deleted
+            slug_path = slug_url.split("thenews.com.pk")[-1].rstrip("/")
+            if not slug_path or slug_path in ("", "/"):
+                return None
+
+            # Step 2: article exists — fetch content from thenews.pk/latest/{ID}
+            # directly to avoid percent-encoding issues with non-ASCII slug URLs
+            direct = f"https://www.thenews.pk/latest/{article_id}"
+            try:
+                async with self._session.get(direct, allow_redirects=True) as resp2:
+                    if resp2.status != 200:
                         return None
-                    raw = await resp.read()
-                    return raw.decode(resp.charset or "utf-8", errors="replace")
+                    raw = await resp2.read()
+                    if len(raw) <= 10:  # JS SPA fallback
+                        return None
+                    return raw.decode(resp2.charset or "utf-8", errors="replace")
             except Exception as exc:
                 log.warning("thenews fetch failed %s: %s", direct, exc)
                 return None
