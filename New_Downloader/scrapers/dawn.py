@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 dawn.py — Dawn.com scraper
 ==========================
@@ -21,6 +23,7 @@ import logging
 import os
 import re
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -29,6 +32,24 @@ from base import BaseNewsScraper, JsonlStore, configure_logging, make_arg_parser
 from bs4 import BeautifulSoup
 
 log = logging.getLogger(__name__)
+
+
+class _RateLimiter:
+    """Allows at most `rate` requests per second across all coroutines in one instance."""
+    def __init__(self, rate: float):
+        self._interval = 1.0 / rate
+        self._lock: asyncio.Lock | None = None
+        self._last = 0.0
+
+    async def acquire(self) -> None:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        async with self._lock:
+            now = time.monotonic()
+            wait = self._interval - (now - self._last)
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._last = time.monotonic()
 
 
 class DawnScraper(BaseNewsScraper):
@@ -40,6 +61,10 @@ class DawnScraper(BaseNewsScraper):
     TIMEOUT         = 20
     BASE_URL        = "https://www.dawn.com/news/{}"
 
+    # 1 request/sec per process — prevents 429s when running multiple
+    # concurrent coroutines against dawn.com's rate limit
+    _throttle = _RateLimiter(rate=1.0)
+
     def __init__(
         self,
         start_id: int = 1,
@@ -50,6 +75,10 @@ class DawnScraper(BaseNewsScraper):
         super().__init__(output_file=output_file, max_concurrent=max_concurrent)
         self.start_id = start_id
         self.end_id   = end_id
+
+    async def _raw_fetch(self, url: str, *, is_xml: bool = False):
+        await self._throttle.acquire()
+        return await super()._raw_fetch(url, is_xml=is_xml)
 
     # ── URL discovery ────────────────────────────────────────────────────────
 

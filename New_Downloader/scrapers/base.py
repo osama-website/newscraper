@@ -14,6 +14,8 @@ and sets class-level config attributes instead of passing constructor args,
 so each file is fully self-contained and runnable with `python geo.py`.
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging

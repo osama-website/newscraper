@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 profit.py — Profit by Pakistan Today scraper
 =============================================

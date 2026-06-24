@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 samaa.py — Samaa TV scraper
 ============================

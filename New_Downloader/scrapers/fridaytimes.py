@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 fridaytimes.py — The Friday Times scraper
 ==========================================

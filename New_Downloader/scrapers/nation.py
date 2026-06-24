@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 nation.py — The Nation scraper
 ================================

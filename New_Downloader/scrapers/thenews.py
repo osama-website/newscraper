@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 thenews.py — The News International scraper
 ============================================
@@ -37,7 +39,7 @@ class TheNewsScraper(BaseNewsScraper):
     OUTPUT_FILE     = "data/thenews/thenews_articles.jsonl"
     SOURCE_NAME     = "thenews"
     SITEMAP_URLS    = []   # no article sitemap exists — ID-based only
-    ARTICLE_PATTERN = re.compile(r"thenews\.com\.pk/latest/\d")
+    ARTICLE_PATTERN = re.compile(r"thenews(?:\.com)?\.pk/(?:story|latest|print)/\d")
     MAX_CONCURRENT  = 50
     TIMEOUT         = 25
     BASE_URL        = "https://www.thenews.com.pk/latest/{}"
@@ -52,6 +54,56 @@ class TheNewsScraper(BaseNewsScraper):
         super().__init__(output_file=output_file, max_concurrent=max_concurrent)
         self.start_id = start_id
         self.end_id   = end_id
+
+    # ── Fetch override: resolve Refresh redirect to slug URL ─────────────────
+
+    _ID_RE = re.compile(r"/(?:story|latest|print)/(\d+)")
+    _REFRESH_RE = re.compile(r"url=(.+)", re.I)
+
+    async def _raw_fetch(self, url: str, *, is_xml: bool = False) -> Optional[str]:
+        m = self._ID_RE.search(url)
+        if not m:
+            return await super()._raw_fetch(url, is_xml=is_xml)
+
+        article_id = m.group(1)
+        lookup = f"https://www.thenews.com.pk/latest/{article_id}"
+
+        async with self._sem:
+            # Step 1: get the Refresh redirect to find the slug URL
+            try:
+                async with self._session.get(lookup, allow_redirects=False) as resp:
+                    refresh_hdr = resp.headers.get("Refresh", "")
+                    rm = self._REFRESH_RE.search(refresh_hdr)
+                    if not rm:
+                        return None
+                    slug_url = rm.group(1).strip()
+            except Exception as exc:
+                log.warning("thenews lookup failed %s: %s", lookup, exc)
+                return None
+
+            # /print/ paths are Cloudflare-blocked — skip them
+            if "/print/" in slug_url:
+                log.debug("thenews skip CF-blocked print path: %s", slug_url)
+                return None
+
+            # Homepage redirect means article doesn't exist (deleted/redirected)
+            slug_path = slug_url.split("thenews.com.pk")[-1].rstrip("/")
+            if not slug_path or slug_path in ("", "/"):
+                log.debug("thenews skip homepage redirect for %s", lookup)
+                return None
+
+            # Step 2: fetch the real slug URL
+            try:
+                async with self._session.get(slug_url, allow_redirects=True) as resp2:
+                    if resp2.status != 200:
+                        log.debug("thenews slug HTTP %d %s", resp2.status, slug_url)
+                        return None
+                    raw = await resp2.read()
+                    charset = resp2.charset or "utf-8"
+                    return raw.decode(charset, errors="replace")
+            except Exception as exc:
+                log.warning("thenews slug fetch failed %s: %s", slug_url, exc)
+                return None
 
     # ── URL discovery ────────────────────────────────────────────────────────
 
@@ -139,6 +191,9 @@ class TheNewsScraper(BaseNewsScraper):
         fields["body"] = self._extract_body(
             soup, [r"story-detail", r"story__detail", r"story-content"]
         )
+
+        if not fields.get("headline") and not fields.get("body"):
+            return None
 
         return fields
 

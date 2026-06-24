@@ -173,7 +173,10 @@ async def run_one_batch(
     timeout = aiohttp.ClientTimeout(total=35)
     connector = aiohttp.TCPConnector(limit=concurrency + 10, ttl_dns_cache=300)
     headers = {
-        "User-Agent": "news-scraper-client/1.0",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        ),
         "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.7,ur;q=0.5",
         "Accept-Encoding": "gzip, deflate, br",

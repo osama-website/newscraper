@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 bbcurdu.py — BBC Urdu scraper
 ==============================

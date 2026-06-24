@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 run_all.py — Run any subset of scrapers from one command
 =========================================================

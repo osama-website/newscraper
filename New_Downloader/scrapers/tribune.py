@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 tribune.py — The Express Tribune scraper
 =========================================
