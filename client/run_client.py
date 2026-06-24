@@ -74,11 +74,21 @@ async def submit_batch(
     results: list[dict[str, Any]],
 ) -> dict[str, Any]:
     url = f"{base.rstrip('/')}/batch/{batch_id}/submit"
-    async with session.post(url, json={"results": results}) as resp:
-        txt = await resp.text()
-        if resp.status >= 400:
-            raise RuntimeError(f"submit {resp.status}: {txt}")
-        return json.loads(txt)
+    for attempt in range(1, 6):
+        try:
+            timeout = aiohttp.ClientTimeout(total=120)
+            async with session.post(url, json={"results": results}, timeout=timeout) as resp:
+                txt = await resp.text()
+                if resp.status >= 400:
+                    raise RuntimeError(f"submit {resp.status}: {txt}")
+                return json.loads(txt)
+        except (aiohttp.ServerDisconnectedError, aiohttp.ClientConnectionError) as exc:
+            if attempt == 5:
+                raise
+            wait = 2 ** attempt
+            log.warning("submit attempt %d/5 failed (%s) — retry in %ds", attempt, exc, wait)
+            await asyncio.sleep(wait)
+    return {}
 
 
 async def send_heartbeat(session: aiohttp.ClientSession, base: str, batch_id: str) -> None:
