@@ -29,6 +29,14 @@ SOURCES: dict[str, dict[str, str]] = {
         "urls_file": str(_REPO_ROOT / "New_Downloader" / "tribune_urls.txt"),
         "parser": "tribune:TribuneScraper",
     },
+    "bbcurdu": {
+        "urls_file": str(_REPO_ROOT / "New_Downloader" / "bbcurdu_urls.txt"),
+        "parser": "bbcurdu:BbcUrduScraper",
+    },
+    "nawaiwaqt": {
+        "urls_file": str(_REPO_ROOT / "New_Downloader" / "nawaiwaqt_urls.txt"),
+        "parser": "nawaiwaqt:NawaiWaqtScraper",
+    },
 }
 
 
