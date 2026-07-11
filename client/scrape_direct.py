@@ -82,6 +82,18 @@ def load_done_urls(output: Optional[str]) -> set[str]:
     return done
 
 
+def failed_log_path(output: Optional[str]) -> Optional[Path]:
+    return Path(f"{output}.failed") if output else None
+
+
+def load_failed_urls(output: Optional[str]) -> set[str]:
+    path = failed_log_path(output)
+    if not path or not path.exists():
+        return set()
+    with path.open("r", encoding="utf-8") as fh:
+        return {line.strip() for line in fh if line.strip()}
+
+
 async def scrape_one(scraper: Any, url: str, sem: asyncio.Semaphore, source: str) -> Optional[dict]:
     async with sem:
         try:
@@ -113,14 +125,18 @@ async def run(args: argparse.Namespace) -> None:
     ParserCls = load_parser_class(parser_spec)
 
     done = load_done_urls(args.output)
-    if done:
-        print(f"resuming: {len(done)} URLs already in {args.output}", file=sys.stderr)
+    failed = load_failed_urls(args.output)
+    skip = done | failed
+    if done or failed:
+        print(f"resuming: {len(done)} done, {len(failed)} previously failed (skipped)", file=sys.stderr)
 
     with open(args.urls_file, "r", encoding="utf-8") as fh:
-        urls = [line.strip() for line in fh if line.strip() and line.strip() not in done]
+        urls = [line.strip() for line in fh if line.strip() and line.strip() not in skip]
     print(f"{len(urls)} URLs to scrape", file=sys.stderr)
 
     out_fh = open(args.output, "a", encoding="utf-8") if args.output else None
+    fail_path = failed_log_path(args.output)
+    fail_fh = fail_path.open("a", encoding="utf-8") if fail_path else None
 
     def emit(record: dict) -> None:
         line = json.dumps(record, ensure_ascii=False)
@@ -130,6 +146,15 @@ async def run(args: argparse.Namespace) -> None:
         else:
             print(line)
             sys.stdout.flush()
+
+    def emit_failed(url: str) -> None:
+        # _raw_fetch already retries transient errors internally before
+        # giving up (see base.py), so a None result here means the URL is
+        # effectively permanently unfetchable (404, parse-empty, etc.) —
+        # record it so a restarted run doesn't loop on it forever.
+        if fail_fh:
+            fail_fh.write(url + "\n")
+            fail_fh.flush()
 
     dummy_out = REPO_ROOT / "client" / ".scrape_direct_dummy.jsonl"
     dummy_out.parent.mkdir(parents=True, exist_ok=True)
@@ -148,20 +173,29 @@ async def run(args: argparse.Namespace) -> None:
     sem = asyncio.Semaphore(args.concurrency)
 
     ok = 0
+    failed_n = 0
     async with aiohttp.ClientSession(connector=connector, timeout=timeout, headers=headers) as session:
         scraper._session = session
         for i in range(0, len(urls), args.chunk):
             chunk = urls[i : i + args.chunk]
             results = await asyncio.gather(*[scrape_one(scraper, u, sem, args.source) for u in chunk])
-            for rec in results:
+            for url, rec in zip(chunk, results):
                 if rec:
                     emit(rec)
                     ok += 1
-            print(f"progress: {min(i + args.chunk, len(urls))}/{len(urls)} attempted, {ok} ok", file=sys.stderr)
+                else:
+                    emit_failed(url)
+                    failed_n += 1
+            print(
+                f"progress: {min(i + args.chunk, len(urls))}/{len(urls)} attempted, {ok} ok, {failed_n} failed",
+                file=sys.stderr,
+            )
         scraper._session = None
 
     if out_fh:
         out_fh.close()
+    if fail_fh:
+        fail_fh.close()
 
 
 def main() -> None:
