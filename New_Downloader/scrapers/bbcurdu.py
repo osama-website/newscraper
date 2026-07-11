@@ -33,10 +33,12 @@ class BbcUrduScraper(BaseNewsScraper):
         "https://www.bbc.com/urdu/sitemap.xml",
         "https://feeds.bbci.co.uk/urdu/rss.xml",
     ]
-    # Match /urdu/<topic>-<id> and /urdu/articles/<id> but NOT /urdu/topics/ etc.
+    # Match /urdu/<topic>-<id>, /urdu/articles/<id>, and the older bare
+    # numeric-ID format used ~2016-2018 (e.g. /urdu/37513623), discovered via
+    # Wayback Machine — but NOT /urdu/topics/ etc.
     ARTICLE_PATTERN = re.compile(
         r"bbc\.com/urdu/(?!topics|popular|media|tv-programmes|radio)"
-        r"(?:[a-z-]+-\d+|articles/[a-z0-9]+)"
+        r"(?:[a-z-]+-\d+|articles/[a-z0-9]+|\d{7,9})"
     )
     MAX_CONCURRENT  = 40   # BBC enforces rate limits; stay conservative
     TIMEOUT         = 25

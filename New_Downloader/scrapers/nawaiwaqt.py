@@ -37,8 +37,13 @@ class NawaiWaqtScraper(BaseNewsScraper):
         "https://www.nawaiwaqt.com.pk/feed/",
     ]
     # Numeric-ID segment identifies articles; exclude /tag/ /category/
-    # Actual URL format: /DD-Mon-YYYY/<7-digit-ID>  e.g. /13-Mar-2026/1977206
-    ARTICLE_PATTERN = re.compile(r"nawaiwaqt\.com\.pk/\d{2}-[A-Z][a-z]+-\d{4}/\d")
+    # Actual URL format: /DD-Mon-YYYY/<5-9-digit-ID>  e.g. /13-Mar-2026/1977206
+    # Historically (pre-~2019) also appears with an optional category-slug
+    # prefix, e.g. /بقیہ-نیوز/01-Dec-2016/537827 — kept optional here so
+    # older archived URLs (discovered via Wayback Machine) still match.
+    ARTICLE_PATTERN = re.compile(
+        r"nawaiwaqt\.com\.pk/(?:[^/]+/)?\d{1,2}-[A-Za-z]+-\d{4}/\d{5,9}"
+    )
     MAX_CONCURRENT  = 40
     TIMEOUT         = 25
     # sitemap.xml has 800+ child sitemaps — cap to 3 most recent daily sitemaps
