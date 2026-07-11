@@ -60,6 +60,12 @@ class BbcUrduScraper(BaseNewsScraper):
             t = soup.find("time")
             if t:
                 fields["pub_date"] = t.get("datetime") or t.get_text(strip=True)
+        if not fields["pub_date"]:
+            # Legacy "Topcat2" template (pre-~2016 archived pages) carries
+            # Dublin Core meta tags instead of <time>/JSON-LD.
+            tag = soup.find("meta", attrs={"name": "dcterms.created"})
+            if tag and tag.get("content"):
+                fields["pub_date"] = tag["content"].strip()
 
         # ---- Author ----
         if not fields["author"]:
@@ -74,7 +80,7 @@ class BbcUrduScraper(BaseNewsScraper):
                         break
 
         # ---- Body ----
-        # BBC CPS wraps each paragraph in data-component="text-block"
+        # BBC CPS (modern) wraps each paragraph in data-component="text-block"
         text_blocks = soup.find_all(attrs={"data-component": "text-block"})
         if text_blocks:
             paras = [
@@ -85,7 +91,36 @@ class BbcUrduScraper(BaseNewsScraper):
             ]
             fields["body"] = "\n\n".join(paras) if paras else None
         else:
-            fields["body"] = self._extract_body(soup, [r"\barticle\b"])
+            fields["body"] = None
+
+            # Legacy "Topcat2" template (~2009-2015 archived pages): body
+            # lives in a class="... story-body" container — but the page
+            # repeats that class on several small wrapper divs (headline,
+            # byline, etc.), so pick the one with the most text, and require
+            # a minimum length so we don't mistake a caption for the body.
+            candidates = soup.find_all(class_=re.compile(r"story-body", re.I))
+            if candidates:
+                container = max(candidates, key=lambda el: len(el.get_text(strip=True)))
+                if len(container.get_text(strip=True)) > 200:
+                    paras = [p.get_text(strip=True) for p in container.find_all("p")
+                             if p.get_text(strip=True)]
+                    fields["body"] = "\n\n".join(paras) if paras else None
+
+            # Old .shtml URLs that BBC has since redirected land on a third,
+            # newer React-rendered template with build-hashed CSS classes
+            # (unstable to select on) but a stable <main role="main"> landmark.
+            if not fields["body"]:
+                main = soup.find("main")
+                if main:
+                    paras = [p.get_text(strip=True) for p in main.find_all("p")
+                             if p.get_text(strip=True)]
+                    fields["body"] = "\n\n".join(paras) if paras else None
+
+            # Last resort: generic class-pattern search (NOTE: avoid a bare
+            # r"\barticle\b" pattern here — it false-matches unrelated
+            # elements like class="article-heading" on the h1 itself).
+            if not fields["body"]:
+                fields["body"] = self._extract_body(soup, [r"article[_-]?body", r"\bstory\b"])
 
         return fields
 
