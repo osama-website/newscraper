@@ -42,8 +42,13 @@ def main() -> None:
     out_path = DATA_DIR / args.source / f"{args.source}_articles.jsonl"
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    conn = sqlite3.connect(str(DB_PATH), timeout=30)
+    # Multiple import_articles.py invocations (e.g. one per source, on
+    # independent sync schedules) can legitimately collide on this file.
+    # A generous busy_timeout makes a waiting writer just wait instead of
+    # raising "database is locked" and losing whatever batch was in flight.
+    conn = sqlite3.connect(str(DB_PATH), timeout=60)
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=60000")
 
     fh_in = sys.stdin if args.input == "-" else open(args.input, "r", encoding="utf-8")
 
@@ -105,8 +110,15 @@ def main() -> None:
             else:
                 marked_done += 1
 
-            if written % 500 == 0:
-                conn.commit()
+            # Commit after every row and yield briefly. The live coordinator
+            # holds no busy_timeout on its own connection, so any write lock
+            # we hold — even briefly — can 500 real in-flight requests.
+            # Committing in big batches (previously every 500 rows) held the
+            # lock across the whole batch's stdin-read latency and broke
+            # /batch/claim for other users. A per-row commit + short sleep
+            # keeps our lock windows down to single-statement durations.
+            conn.commit()
+            time.sleep(0.02)
 
     conn.commit()
     conn.close()
