@@ -22,6 +22,10 @@ python client/run_client.py --server http://127.0.0.1:8000 --loop
 # Options
 python client/run_client.py --server http://HOST:8000 --source tribune --batch-size 50 \
   --concurrency 25 --client-id my-laptop --verbose
+
+# BBC Urdu / Nawa-i-Waqt
+python client/run_client.py --server http://HOST:8000 --source bbcurdu --loop --client-id my-laptop
+python client/run_client.py --server http://HOST:8000 --source nawaiwaqt --loop --client-id my-laptop
 ```
 
 - **`--source`**: optional; if omitted the server assigns the source with the largest pending queue.

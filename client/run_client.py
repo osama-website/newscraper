@@ -189,7 +189,10 @@ async def run_one_batch(
         ),
         "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.7,ur;q=0.5",
-        "Accept-Encoding": "gzip, deflate, br",
+        # No "br": aiohttp's Brotli decode fails against some sites (e.g.
+        # thenews.com.pk returns HTTP 400 "Can not decode content-encoding: br"),
+        # and gzip/deflate is always supported without an extra dependency.
+        "Accept-Encoding": "gzip, deflate",
     }
 
     sem = asyncio.Semaphore(concurrency)
@@ -261,7 +264,8 @@ def main() -> None:
     p = argparse.ArgumentParser(description="News scraper distributed client")
     p.add_argument("--server", required=True, help="Coordinator base URL, e.g. http://127.0.0.1:8000")
     p.add_argument("--loop", action="store_true", help="Keep claiming batches until interrupted")
-    p.add_argument("--source", default=None, help="Force a source (express, geo, jang, thenews, tribune)")
+    p.add_argument("--source", default=None,
+                   help="Force a source (dawn, express, geo, jang, thenews, tribune, bbcurdu, nawaiwaqt)")
     p.add_argument("--batch-size", type=int, default=50)
     p.add_argument("--concurrency", type=int, default=20)
     p.add_argument("--client-id", default=None, help="Shown in server assigned_to field")
