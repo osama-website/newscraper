@@ -103,6 +103,12 @@ async def scrape_one(scraper: Any, url: str, sem: asyncio.Semaphore, source: str
             fields = scraper.parse_article(html, url)
             if not fields:
                 return None
+            body = fields.get("body")
+            if not body or not body.strip():
+                # Some pages match the article URL pattern but carry no text
+                # body (photo/video-only pages, galleries, etc.) — a headline
+                # alone isn't an article; don't let these masquerade as done.
+                return None
             return {
                 "source": source,
                 "url": url,
@@ -110,7 +116,7 @@ async def scrape_one(scraper: Any, url: str, sem: asyncio.Semaphore, source: str
                 "headline": fields.get("headline"),
                 "pub_date": fields.get("pub_date"),
                 "author": fields.get("author"),
-                "body": fields.get("body"),
+                "body": body,
             }
         except Exception as exc:
             print(f"skip {url}: {exc}", file=sys.stderr)
